@@ -1,5 +1,6 @@
 import socket
 import threading
+import keyboard  # Додаємо бібліотеку для відслідковування клавіатури
 
 # Функція для отримання повідомлень від сервера
 def receive_messages(client_socket):
@@ -14,12 +15,19 @@ def receive_messages(client_socket):
             print(f"Помилка під час отримання повідомлення: {e}")
             break
 
+# Функція для перевірки натискання клавіші Esc
+def check_escape_key():
+    while True:
+        if keyboard.is_pressed('esc'):  # Перевіряємо, чи натиснута клавіша Esc
+            print("\nНатиснута клавіша Esc. Вихід з програми...")
+            exit(0)
+
 # Налаштування клієнта
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Вкажіть IP-адресу та порт сервера
 server_ip = "7.tcp.eu.ngrok.io"  # Замініть на IP сервера
-server_port =  16486
+server_port = 10872
 
 try:
     client.connect((server_ip, server_port))
@@ -31,6 +39,11 @@ except Exception as e:
 # Запускаємо потік для отримання повідомлень від сервера
 receive_thread = threading.Thread(target=receive_messages, args=(client,))
 receive_thread.start()
+
+# Запускаємо потік для перевірки натискання клавіші Esc
+escape_thread = threading.Thread(target=check_escape_key)
+escape_thread.daemon = True  # Щоб потік завершився разом з основним
+escape_thread.start()
 
 # Відправка повідомлень на сервер
 try:
