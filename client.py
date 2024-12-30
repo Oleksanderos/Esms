@@ -3,7 +3,7 @@ import threading
 import keyboard  # Для відслідковування натискання клавіші
 
 # Імпортуємо функцію авторизації
-from authdemo import login_or_register
+from authdemo import login
 
 
 # Функція для отримання повідомлень від сервера
@@ -35,7 +35,7 @@ def start_client(user_login):
 
     # Вкажіть IP-адресу та порт сервера
     server_ip = "2.tcp.eu.ngrok.io"  # Замініть на IP сервера
-    server_port = 14787
+    server_port = 11528
 
     try:
         client.connect((server_ip, server_port))
@@ -69,7 +69,7 @@ def start_client(user_login):
 
 if __name__ == "__main__":
     # Авторизація користувача перед підключенням до сервера
-    user_login = login_or_register()
+    user_login = login()
 
     if user_login:
         start_client(user_login)  # Якщо авторизація пройшла успішно
