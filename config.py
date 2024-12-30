@@ -1,4 +1,1 @@
-host = "localhost"
-user = "root"
-password = "mysql"
-db_name = "esms"
+MYSQL_URL = "mysql://root:TbDjqSAixBjBGlNteyVziItiqrXUYHHh@junction.proxy.rlwy.net:43619/railway"
