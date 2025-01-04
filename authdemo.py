@@ -1,23 +1,77 @@
 import pymysql
 from urllib.parse import urlparse
 from config import MYSQL_URL  # Імпортуємо URL з файлу config.py
+import sys
+import keyboard  # Потрібно встановити через `pip install keyboard`
+import hashlib  # Для хешування паролів
 
+def hash_password(password):
+    """Хешує пароль за допомогою SHA-256."""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def input_with_asterisks(prompt=""):
+    """Функція для введення пароля із зірочками, ігноруючи пробіли."""
+    print(prompt, end="", flush=True)
+    password = ""
+    allowed_keys = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"  # Дозволені символи
+
+    while True:
+        key = keyboard.read_event(suppress=True)  # Чекаємо на натискання клавіші
+        if key.event_type == "down":  # Обробляємо тільки натискання
+            if key.name == "enter":  # Якщо натиснуто Enter
+                print()  # Переходимо на новий рядок
+                break
+            elif key.name == "backspace":  # Якщо натиснуто Backspace
+                if len(password) > 0:
+                    password = password[:-1]
+                    # Видаляємо останній символ з консолі
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+            elif key.name in allowed_keys:  # Дозволяємо лише певні символи
+                password += key.name
+                sys.stdout.write("*")
+                sys.stdout.flush()
+            # Усі інші клавіші (включаючи пробіли) ігноруються
+    return password
+
+def input_password_open(prompt=""):
+    """Функція для відкритого введення пароля, ігноруючи пробіли."""
+    print(prompt, end="", flush=True)
+    password = ""
+    allowed_keys = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"  # Дозволені символи
+
+    while True:
+        key = keyboard.read_event(suppress=True)  # Чекаємо на натискання клавіші
+        if key.event_type == "down":  # Обробляємо тільки натискання
+            if key.name == "enter":  # Якщо натиснуто Enter
+                print()  # Переходимо на новий рядок
+                break
+            elif key.name == "backspace":  # Якщо натиснуто Backspace
+                if len(password) > 0:
+                    password = password[:-1]
+                    sys.stdout.write("\b \b")  # Видаляємо останній символ
+                    sys.stdout.flush()
+            elif key.name in allowed_keys:  # Дозволяємо лише певні символи
+                password += key.name
+                sys.stdout.write(key.name)  # Виводимо введений символ
+                sys.stdout.flush()
+            # Усі інші клавіші (включаючи пробіли) ігноруються
+    return password
 
 def get_user(cursor, login):
     """Перевіряє, чи існує користувач у базі даних."""
     cursor.execute("SELECT * FROM users WHERE login=%s", (login,))
     return cursor.fetchone()
 
-
 def add_user(cursor, connection, login, password):
     """Додає нового користувача до бази даних."""
     try:
-        cursor.execute("INSERT INTO users (login, password) VALUES (%s, %s)", (login, password))
+        hashed_password = hash_password(password)
+        cursor.execute("INSERT INTO users (login, password) VALUES (%s, %s)", (login, hashed_password))
         connection.commit()  # Підтверджуємо зміни
         print(f"Користувача '{login}' успішно зареєстровано!")
     except Exception as ex:
         print(f"Помилка при додаванні користувача: {ex}")
-
 
 def login_or_register():
     """Функція для вибору між входом і реєстрацією."""
@@ -50,17 +104,28 @@ def login_or_register():
                     choice = input("Виберіть дію: (1) Вхід, (2) Реєстрація: ").strip()
                     if choice == "1":  # Вхід
                         login_input = input("Введіть логін: ")
-                        password_input = input("Введіть пароль: ")
+                        password_input = input_with_asterisks("Введіть пароль: ")
+                        hashed_password = hash_password(password_input)
 
                         user_data = get_user(cursor, login_input)
-                        if user_data and user_data['password'] == password_input:
+                        if user_data and user_data['password'] == hashed_password:
                             print(f"Ласкаво просимо, {login_input}!")
                             return login_input  # Повертаємо логін, якщо авторизація успішна
                         else:
                             print("Невірний логін або пароль.")
                     elif choice == "2":  # Реєстрація
                         login_input = input("Введіть новий логін: ")
-                        password_input = input("Введіть новий пароль: ")
+
+                        while True:  # Цикл для повторного введення пароля, якщо є помилки
+                            password_input = input_password_open("Введіть новий пароль: ")
+
+                            # Перевіряємо довжину пароля
+                            if len(password_input) < 4:
+                                print("Пароль повинен містити хоча б 4 символи. Спробуйте ще раз.")
+                                continue
+
+                            # Якщо всі перевірки пройдені, виходимо з циклу
+                            break
 
                         # Перевіряємо, чи користувач вже існує
                         if get_user(cursor, login_input):
