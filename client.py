@@ -41,27 +41,35 @@ def check_escape_key():
 
 # Оновлення статусу користувача на "в мережі"
 def update_web_status(cursor, connection, login):
-    """Оновлює статус користувача на 'в мережі' (webstatus = 1)."""
     try:
         cursor.execute("UPDATE users SET webstatus = 1 WHERE login = %s", (login,))
-        connection.commit()  # Підтверджуємо зміни
+        connection.commit()
         print(f"Статус користувача '{login}' оновлено на 'в мережі'.")
     except Exception as ex:
         print(f"Помилка при оновленні статусу: {ex}")
 
+# Функція для подання скарги
+def add_report_to_server(client_socket, user_login):
+    try:
+        reported_user = input("Введіть ім'я користувача на якого ви хочете подати скаргу: ")
+        report_message = input("Введіть повідомлення скарги: ")
+        if reported_user.strip() and report_message.strip():
+            report_data = f"REPORT:{reported_user}:{report_message}"
+            client_socket.send(report_data.encode('utf-8'))
+    except Exception as e:
+        print(f"Помилка під час подання скарги: {e}")
+
 # Налаштування клієнта
 def start_client(user_login):
-    """Підключення до сервера та відправка повідомлень."""
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # Вкажіть IP-адресу та порт сервера
-    server_ip = "7.tcp.eu.ngrok.io"  # Замініть на IP сервера
-    server_port = 17787
+    server_ip = "0.tcp.eu.ngrok.io"  # Замініть на IP сервера
+    server_port = 18462
 
     try:
         client.connect((server_ip, server_port))
         print(f"Підключено до сервера як {user_login}")
-        # Надсилаємо логін на сервер
         client.send(user_login.encode('utf-8'))
         save_message_to_history(user_login, f"Підключено до сервера як {user_login}")
     except Exception as e:
@@ -70,27 +78,23 @@ def start_client(user_login):
 
     # Запускаємо потік для отримання повідомлень від сервера
     receive_thread = threading.Thread(target=receive_messages, args=(client, user_login))
-    receive_thread.daemon = True  # Потік завершиться разом з основним
+    receive_thread.daemon = True
     receive_thread.start()
 
     # Запускаємо потік для перевірки натискання клавіші Esc
     escape_thread = threading.Thread(target=check_escape_key)
-    escape_thread.daemon = True  # Щоб потік завершився разом з основним
+    escape_thread.daemon = True
     escape_thread.start()
 
     # Підключення до бази даних для оновлення статусу
     try:
-        # Розбираємо URL для отримання компонентів
         parsed_url = urlparse(MYSQL_URL)
-
-        # Отримуємо деталі підключення
         user = parsed_url.username
         password = parsed_url.password
         host = parsed_url.hostname
         port = parsed_url.port
-        database = parsed_url.path[1:]  # Видаляємо перший символ '/' з імені бази даних
+        database = parsed_url.path[1:]
 
-        # Підключаємося до MySQL через URL
         connection = pymysql.connect(
             host=host,
             user=user,
@@ -100,29 +104,26 @@ def start_client(user_login):
             cursorclass=pymysql.cursors.DictCursor
         )
         with connection.cursor() as cursor:
-            # Оновлюємо статус користувача на "в мережі"
             update_web_status(cursor, connection, user_login)
 
-        # Відправка повідомлень на сервер
         try:
             while True:
                 message = input(f"{user_login} >> Введіть повідомлення: ")
-                if message.strip():
+                if message.strip() == "/report":
+                    add_report_to_server(client, user_login)
+                elif message.strip():
                     client.send(message.encode('utf-8'))
                     save_message_to_history(user_login, f"Відправлено: {message}")
         except KeyboardInterrupt:
             print("\nВихід з програми...")
-            client.close()  # Закриваємо з'єднання
+            client.close()
     except Exception as ex:
-        print("Помилка під час підключення до бази даних або оновлення статусу:")
-        print(ex)
+        print(f"Помилка під час підключення до бази даних: {ex}")
         exit()
 
 if __name__ == "__main__":
-    # Авторизація користувача перед підключенням до сервера
     user_login = login_or_register()
-
     if user_login:
-        start_client(user_login)  # Якщо авторизація пройшла успішно
+        start_client(user_login)
     else:
         print("Авторизація не вдалася. Завершення програми.")

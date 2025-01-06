@@ -48,6 +48,20 @@ def update_web_status(login, status):
     except Exception as ex:
         print(f"Помилка при оновленні вебстатусу: {ex}")
 
+# Функція для обробки скарг
+def handle_report(report_message, reported_by, reported_user):
+    try:
+        connection = get_db_connection()
+        if connection:
+            with connection.cursor() as cursor:
+                sql = "INSERT INTO reports (message, reported_by, reported_user, timestamp, resolved) VALUES (%s, %s, %s, NOW(), FALSE)"
+                cursor.execute(sql, (report_message, reported_by, reported_user))
+                connection.commit()
+            connection.close()
+            print(f"Скаргу від {reported_by} на {reported_user} успішно збережено.")
+    except Exception as ex:
+        print(f"Помилка при обробці скарги: {ex}")
+
 # Функція для обробки клієнтів
 def handle_client(client_socket, client_address):
     try:
@@ -68,11 +82,12 @@ def handle_client(client_socket, client_address):
             if not message:
                 break
 
-            # Виводимо повідомлення разом з логіном і айпі
-            print(f"\n{login} ({client_address[0]}): {message}")
-
-            # Відправляємо повідомлення всім клієнтам
-            forward_message(message, client_socket, login)
+            if message.startswith("REPORT:"):
+                _, reported_user, report_message = message.split(":", 2)
+                handle_report(report_message.strip(), login, reported_user.strip())
+            else:
+                print(f"\n{login} ({client_address[0]}): {message}")
+                forward_message(message, client_socket, login)
     except Exception as e:
         print(f"Помилка у клієнтському підключенні: {e}")
     finally:
