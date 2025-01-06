@@ -23,13 +23,11 @@ try:
     with connection.cursor() as cursor:
         # Створюємо нову таблицю users з унікальним login
         cursor.execute("""
-            CREATE TABLE users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                login VARCHAR(25) UNIQUE,
-                password VARCHAR(25)
-            );
+          ALTER TABLE users
+    ADD COLUMN webstatus TINYINT NOT NULL DEFAULT 0,
+    ADD COLUMN ban TINYINT NOT NULL DEFAULT 0;
         """)
         connection.commit()
-        print("Таблицю успішно створено з унікальним логіном та паролем!")
+        print("Зміни вступили в силу!")
 finally:
     connection.close()
