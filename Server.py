@@ -2,65 +2,25 @@ import socket
 import threading
 import signal
 import sys
-import pymysql
-from urllib.parse import urlparse
-from config import MYSQL_URL  # Імпортуємо URL з файлу config.py
+import os
 
 # Зберігаємо список підключених клієнтів і їх логіни
 clients = {}
 usernames = {}  # Зберігаємо логіни користувачів, прив'язані до сокетів
 
-# Функція для підключення до бази даних
-def get_db_connection():
-    try:
-        parsed_url = urlparse(MYSQL_URL)
-        user = parsed_url.username
-        password = parsed_url.password
-        host = parsed_url.hostname
-        port = parsed_url.port
-        database = parsed_url.path[1:]
+# Завантаження історії чату
+def load_chat_history(user1, user2):
+    filename = f"chat_{min(user1, user2)}_{max(user1, user2)}.txt"
+    if os.path.exists(filename):
+        with open(filename, 'r', encoding='utf-8') as file:
+            return file.readlines()
+    return []
 
-        connection = pymysql.connect(
-            host=host,
-            user=user,
-            password=password,
-            database=database,
-            port=port,
-            cursorclass=pymysql.cursors.DictCursor
-        )
-        return connection
-    except Exception as ex:
-        print(f"Помилка при підключенні до БД: {ex}")
-        return None
-
-# Функція для оновлення вебстатусу користувача в базі даних
-def update_web_status(login, status):
-    try:
-        connection = get_db_connection()
-        if connection:
-            with connection.cursor() as cursor:
-                cursor.execute("UPDATE users SET webstatus=%s WHERE login=%s", (status, login))
-                connection.commit()
-            connection.close()
-            print(f"Вебстатус користувача {login} змінено на {status}.")
-        else:
-            print("Не вдалося підключитися до бази даних для оновлення статусу.")
-    except Exception as ex:
-        print(f"Помилка при оновленні вебстатусу: {ex}")
-
-# Функція для обробки скарг
-def handle_report(report_message, reported_by, reported_user):
-    try:
-        connection = get_db_connection()
-        if connection:
-            with connection.cursor() as cursor:
-                sql = "INSERT INTO reports (message, reported_by, reported_user, timestamp, resolved) VALUES (%s, %s, %s, NOW(), FALSE)"
-                cursor.execute(sql, (report_message, reported_by, reported_user))
-                connection.commit()
-            connection.close()
-            print(f"Скаргу від {reported_by} на {reported_user} успішно збережено.")
-    except Exception as ex:
-        print(f"Помилка при обробці скарги: {ex}")
+# Збереження історії чату
+def save_chat_history(user1, user2, message):
+    filename = f"chat_{min(user1, user2)}_{max(user1, user2)}.txt"
+    with open(filename, 'a', encoding='utf-8') as file:
+        file.write(message + "\n")
 
 # Функція для обробки клієнтів
 def handle_client(client_socket, client_address):
@@ -70,24 +30,45 @@ def handle_client(client_socket, client_address):
 
         # Зберігаємо логін користувача, прив'язуючи його до сокета
         usernames[client_socket] = login
+        clients[client_socket] = client_address
 
-        print(f"Клієнт {client_address} підключений як {login}")
-        clients[client_socket] = client_address  # Можна також зберігати адресу, якщо потрібно
+        print(f"Клієнт {client_address} підключився як {login}")
 
-        # Оновлюємо вебстатус на 1 (клієнт в мережі)
-        update_web_status(login, 1)
+        # Перевірка, чи є партнер у чату
+        partner_socket = None
+        partner_login = None
+        for sock, user in usernames.items():
+            if sock != client_socket:
+                partner_socket = sock
+                partner_login = user
+                break
 
+        # Завантажуємо історію, якщо знайдено партнера
+        if partner_login:
+            chat_history = load_chat_history(login, partner_login)
+            client_socket.send("Історія чату:\n".encode('utf-8'))
+            for line in chat_history:
+                client_socket.send(line.encode('utf-8'))
+
+            partner_socket.send(f"{login} приєднався до чату.".encode('utf-8'))
+            print(f"{login} приєднався до чату з {partner_login}")
+
+        # Основний цикл обміну повідомленнями
         while True:
             message = client_socket.recv(1024).decode('utf-8')
             if not message:
                 break
 
-            if message.startswith("REPORT:"):
-                _, reported_user, report_message = message.split(":", 2)
-                handle_report(report_message.strip(), login, reported_user.strip())
-            else:
-                print(f"\n{login} ({client_address[0]}): {message}")
-                forward_message(message, client_socket, login)
+            formatted_message = f"{login}: {message}"
+            print(formatted_message)
+
+            # Збереження історії
+            if partner_login:
+                save_chat_history(login, partner_login, formatted_message)
+
+            # Відправляємо повідомлення всім клієнтам
+            forward_message(formatted_message, client_socket)
+
     except Exception as e:
         print(f"Помилка у клієнтському підключенні: {e}")
     finally:
@@ -95,18 +76,16 @@ def handle_client(client_socket, client_address):
         if client_socket in clients:
             del clients[client_socket]
         if client_socket in usernames:
-            login = usernames[client_socket]
             del usernames[client_socket]
-            # Оновлюємо вебстатус на 0 (клієнт відключений)
-            update_web_status(login, 0)
         client_socket.close()
 
 # Функція для пересилання повідомлень між клієнтами
-def forward_message(message, sender_socket, sender_login):
+def forward_message(message, sender_socket):
     for client_socket in clients:
         if client_socket != sender_socket:  # Не відправляти повідомлення клієнту, який його надіслав
             try:
-                client_socket.send(f"{sender_login}: {message}".encode('utf-8'))
+                client_socket.send(message.encode('utf-8'))
+                print(f"Повідомлення відправлено клієнту {clients[client_socket]}")
             except Exception as e:
                 print(f"Не вдалося відправити повідомлення клієнту: {e}")
 
@@ -124,7 +103,7 @@ signal.signal(signal.SIGINT, close_server)
 # Налаштування сервера
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind(("127.0.0.1", 5555))  # Слухаємо на всіх інтерфейсах
+server.bind(("0.0.0.0", 5555))  # Слухаємо на всіх інтерфейсах
 server.listen(5)
 print("Сервер запущений і чекає на з'єднання...")
 
