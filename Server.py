@@ -2,10 +2,51 @@ import socket
 import threading
 import signal
 import sys
+import pymysql
+from urllib.parse import urlparse
+from config import MYSQL_URL  # Імпортуємо URL з файлу config.py
 
 # Зберігаємо список підключених клієнтів і їх логіни
 clients = {}
 usernames = {}  # Зберігаємо логіни користувачів, прив'язані до сокетів
+
+# Функція для підключення до бази даних
+def get_db_connection():
+    try:
+        parsed_url = urlparse(MYSQL_URL)
+        user = parsed_url.username
+        password = parsed_url.password
+        host = parsed_url.hostname
+        port = parsed_url.port
+        database = parsed_url.path[1:]
+
+        connection = pymysql.connect(
+            host=host,
+            user=user,
+            password=password,
+            database=database,
+            port=port,
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        return connection
+    except Exception as ex:
+        print(f"Помилка при підключенні до БД: {ex}")
+        return None
+
+# Функція для оновлення вебстатусу користувача в базі даних
+def update_web_status(login, status):
+    try:
+        connection = get_db_connection()
+        if connection:
+            with connection.cursor() as cursor:
+                cursor.execute("UPDATE users SET webstatus=%s WHERE login=%s", (status, login))
+                connection.commit()
+            connection.close()
+            print(f"Вебстатус користувача {login} змінено на {status}.")
+        else:
+            print("Не вдалося підключитися до бази даних для оновлення статусу.")
+    except Exception as ex:
+        print(f"Помилка при оновленні вебстатусу: {ex}")
 
 # Функція для обробки клієнтів
 def handle_client(client_socket, client_address):
@@ -18,6 +59,9 @@ def handle_client(client_socket, client_address):
 
         print(f"Клієнт {client_address} підключений як {login}")
         clients[client_socket] = client_address  # Можна також зберігати адресу, якщо потрібно
+
+        # Оновлюємо вебстатус на 1 (клієнт в мережі)
+        update_web_status(login, 1)
 
         while True:
             message = client_socket.recv(1024).decode('utf-8')
@@ -36,7 +80,10 @@ def handle_client(client_socket, client_address):
         if client_socket in clients:
             del clients[client_socket]
         if client_socket in usernames:
+            login = usernames[client_socket]
             del usernames[client_socket]
+            # Оновлюємо вебстатус на 0 (клієнт відключений)
+            update_web_status(login, 0)
         client_socket.close()
 
 # Функція для пересилання повідомлень між клієнтами
