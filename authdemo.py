@@ -5,9 +5,11 @@ import sys
 import keyboard  # Потрібно встановити через `pip install keyboard`
 import hashlib  # Для хешування паролів
 
+
 def hash_password(password):
     """Хешує пароль за допомогою SHA-256."""
     return hashlib.sha256(password.encode()).hexdigest()
+
 
 def input_with_asterisks(prompt=""):
     """Функція для введення пароля із зірочками, ігноруючи пробіли."""
@@ -34,6 +36,7 @@ def input_with_asterisks(prompt=""):
             # Усі інші клавіші (включаючи пробіли) ігноруються
     return password
 
+
 def input_password_open(prompt=""):
     """Функція для відкритого введення пароля, ігноруючи пробіли."""
     print(prompt, end="", flush=True)
@@ -58,10 +61,16 @@ def input_password_open(prompt=""):
             # Усі інші клавіші (включаючи пробіли) ігноруються
     return password
 
+
 def get_user(cursor, login):
-    """Перевіряє, чи існує користувач у базі даних."""
+    """Перевіряє, чи існує користувач у базі даних та перевіряє його бан статус."""
     cursor.execute("SELECT * FROM users WHERE login=%s", (login,))
-    return cursor.fetchone()
+    user = cursor.fetchone()
+
+    if user and user['ban'] == 1:  # Якщо бан статус 1, то повертаємо повідомлення
+        return None  # Повертаємо None, щоб не дозволити підключення
+    return user
+
 
 def add_user(cursor, connection, login, password):
     """Додає нового користувача до бази даних."""
@@ -72,6 +81,7 @@ def add_user(cursor, connection, login, password):
         print(f"Користувача '{login}' успішно зареєстровано!")
     except Exception as ex:
         print(f"Помилка при додаванні користувача: {ex}")
+
 
 def login_or_register():
     """Функція для вибору між входом і реєстрацією."""
@@ -108,6 +118,11 @@ def login_or_register():
                         hashed_password = hash_password(password_input)
 
                         user_data = get_user(cursor, login_input)
+
+                        if user_data is None:
+                            print("\033[31mВаш аккаунт заблокований.\033[0m")
+                            continue  # Пропускаємо далі, якщо аккаунт заблокований
+
                         if user_data and user_data['password'] == hashed_password:
                             print(f"Ласкаво просимо, {login_input}!")
                             return login_input  # Повертаємо логін, якщо авторизація успішна
